@@ -62,4 +62,15 @@ exit status 1
 
 ```
 
+- it will produce a SAM compatible format which will give the start, end, kmer, origin of the kmer and all the other details. 
+- writing a interconvertible which will convert this into a hash Btree. 
+
+```
+0       5       ATACT   ATACTTTAAATTTTAGTTACTATTAT
+1       6       TACTT   ATACTTTAAATTTTAGTTACTATTAT
+2       7       ACTTT   ATACTTTAAATTTTAGTTACTATTAT
+3       8       CTTTA   ATACTTTAAATTTTAGTTACTATTAT
+4       9       TTTAA   ATACTTTAAATTTTAGTTACTATTAT
+```
+
 Gaurav Sablok
