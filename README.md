@@ -1,6 +1,6 @@
 # go-nuc-iter 
 - a go implementation the same speed as the RUST. 
-- to compare against RUST, i coded this also in RUST.
+- to compare against RUST, a RUSt version with the RUST docker is also present.
 - golang has no unique function, so implemented a additional string compare. 
 
 ```
