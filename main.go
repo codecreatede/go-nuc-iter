@@ -30,6 +30,7 @@ import (
 	"bufio"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -45,7 +46,24 @@ var (
 var rootCmd = &cobra.Command{
 	Use:  "sequence",
 	Long: "Finding the origin of the kmer",
-	Run:  sequenceFunc,
+}
+
+var pacbioCmd = &cobra.Command{
+	Use:  "pacbio",
+	Long: "Pacbio finding the original kmer",
+	Run:  pacbioFunc,
+}
+
+var genomeCmd = &cobra.Command{
+	Use:  "genome",
+	Long: "Genome finding the original kmer",
+	Run:  genomeFunc,
+}
+
+var illuminaCmd = &cobra.Command{
+	Use:  "illumina",
+	Long: "illumina finding the original kmer",
+	Run:  illuminaFunc,
 }
 
 func main() {
@@ -56,48 +74,33 @@ func main() {
 }
 
 func init() {
-	rootCmd.Flags().
+	pacbioCmd.Flags().
 		StringVarP(&pacbiofile, "pacbiofile", "P", "pacbiofile to be analyzed", "pacbioinsert")
-	rootCmd.Flags().
-		StringVarP(&illuminafile, "illuminafile", "I", "illumina file", "illumina file to be analyzed")
-	rootCmd.Flags().
-		StringVarP(&genomefile, "genome file", "G", "genome file", "genome file to be analyzed")
-	rootCmd.Flags().
+	pacbioCmd.Flags().
 		IntVarP(&kmerArgs, "kmerArgs", "A", 10, "origin kmer")
+	illuminaCmd.Flags().
+		StringVarP(&illuminafile, "illuminafile", "i", "pacbiofile to be analyzed", "pacbioinsert")
+	illuminaCmd.Flags().
+		IntVarP(&kmerArgs, "kmerArgs", "A", 10, "origin kmer")
+	genomeCmd.Flags().
+		StringVarP(&genomefile, "genomefile", "G", "pacbiofile to be analyzed", "pacbioinsert")
+	genomeCmd.Flags().
+		IntVarP(&kmerArgs, "kmerArgs", "A", 10, "origin kmer")
+
+	rootCmd.AddCommand(pacbioCmd)
+	rootCmd.AddCommand(illuminaCmd)
+	rootCmd.AddCommand(genomeCmd)
 }
 
-func sequenceFunc(cmd *cobra.Command, args []string) {
+func pacbioFunc(cmd *cobra.Command, args []string) {
 	type pacbiofileID struct {
 		id string
 	}
 	type pacbiofileSeq struct {
 		seq string
 	}
-
-	type illuminaID struct {
-		id string
-	}
-
-	type illuminaSeq struct {
-		seq string
-	}
-
-	type genomeID struct {
-		id string
-	}
-
-	type genomeSeq struct {
-		seq string
-	}
-
 	pacbioIDConstruct := []pacbiofileID{}
 	pacbioSeqConstruct := []pacbiofileSeq{}
-
-	illuminaIDConstruct := []illuminaID{}
-	illuminaSeqConstruct := []illuminaSeq{}
-
-	genomeIDConstruct := []genomeID{}
-	genomeSeqConstruct := []genomeSeq{}
 
 	// reading and storing the pacbio file
 
@@ -122,30 +125,66 @@ func sequenceFunc(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// reading and storing the illumina file
+	pacbioIsolate := []string{}
 
-	fillumina, err := os.Open(illuminafile)
+	for i := range pacbioSeqConstruct {
+		pacbioIsolate = append(pacbioIsolate, pacbioSeqConstruct[i].seq)
+	}
+
+	pacbioHashes := []string{}
+
+	for i := 0; i <= len(pacbioIsolate); i++ {
+		for j := 0; j <= len(pacbioIsolate[i])-kmerArgs; j++ {
+			pacbioHashes = append(pacbioHashes, pacbioIsolate[i][j:j+kmerArgs])
+		}
+	}
+
+	uniquePacbio, _ := uniqueHash(pacbioIsolate)
+
+	pacbioFile, err := os.Create("pacbiohashes.txt")
+	if err != nil {
+		log.Fatal(err)
+		defer pacbioFile.Close()
+	}
+	for i := range uniquePacbio {
+		pacbioFile.WriteString(uniquePacbio[i] + "\n")
+	}
+
+	pacbioIndexStart := []int{}
+	pacbioIndexEnd := []int{}
+
+	for i := range uniquePacbio {
+		for j := range pacbioIsolate {
+			start := strings.Index(pacbioIsolate[j], uniquePacbio[i])
+			end := start + len(uniquePacbio[i])
+			pacbioIndexStart = append(pacbioIndexStart, start)
+			pacbioIndexEnd = append(pacbioIndexEnd, end)
+		}
+	}
+
+	pacbioWrite, err := os.Create("pacbioKmerOrigin.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	Oillumina := bufio.NewScanner(fillumina)
-	for Oillumina.Scan() {
-		line := Oillumina.Text()
-		if strings.HasPrefix(string(line), "@") {
-			illuminaIDConstruct = append(illuminaIDConstruct, illuminaID{
-				id: strings.ReplaceAll(strings.Split(string(line), " ")[0], "@", ""),
-			})
-		}
-		if strings.HasPrefix(string(line), "A") || strings.HasPrefix(string(line), "T") ||
-			strings.HasPrefix(string(line), "G") ||
-			strings.HasPrefix(string(line), "C)") {
-			illuminaSeqConstruct = append(illuminaSeqConstruct, illuminaSeq{
-				seq: string(line),
-			})
-		}
+
+	for i := range pacbioIndexStart {
+		start := strconv.Itoa(pacbioIndexStart[i])
+		end := strconv.Itoa(pacbioIndexEnd[i])
+		pacbioWrite.WriteString(start + "\t" + end + "\t" + uniquePacbio[i])
+	}
+}
+
+func genomeFunc(cmd *cobra.Command, args []string) {
+	type genomeID struct {
+		id string
 	}
 
-	// reading and storing the genome file
+	type genomeSeq struct {
+		seq string
+	}
+
+	genomeIDConstruct := []genomeID{}
+	genomeSeqConstruct := []genomeSeq{}
 
 	fgenome, err := os.Open(genomefile)
 	if err != nil {
@@ -168,71 +207,20 @@ func sequenceFunc(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	// isolating the sequences
-
-	pacbioIsolate := []string{}
-	illuminaIsolate := []string{}
 	genomeIsolate := []string{}
-
-	for i := range pacbioSeqConstruct {
-		pacbioIsolate = append(pacbioIsolate, pacbioSeqConstruct[i].seq)
-	}
-
-	for i := range illuminaSeqConstruct {
-		illuminaIsolate = append(illuminaIsolate, illuminaSeqConstruct[i].seq)
-	}
 
 	for i := range genomeSeqConstruct {
 		genomeIsolate = append(genomeIsolate, genomeSeqConstruct[i].seq)
 	}
 
-	// making the hashes
-
-	pacbioHashes := []string{}
-	illuminaHashes := []string{}
 	genomeHashes := []string{}
-
-	for i := 0; i <= len(pacbioIsolate); i++ {
-		for j := 0; j <= len(pacbioIsolate[i])-kmerArgs; j++ {
-			pacbioHashes = append(pacbioHashes, pacbioIsolate[i][j:j+kmerArgs])
-		}
-	}
-
-	for i := 0; i <= len(illuminaIsolate); i++ {
-		for j := 0; j <= len(pacbioIsolate[i])-kmerArgs; j++ {
-			illuminaHashes = append(illuminaHashes, pacbioIsolate[i][j:j+kmerArgs])
-		}
-	}
-
 	for i := 0; i <= len(genomeIsolate); i++ {
-		for j := 0; j <= len(pacbioIsolate[i])-kmerArgs; j++ {
-			genomeHashes = append(genomeHashes, pacbioIsolate[i][j:j+kmerArgs])
+		for j := 0; j <= len(genomeIsolate[i])-kmerArgs; j++ {
+			genomeHashes = append(genomeHashes, genomeIsolate[i][j:j+kmerArgs])
 		}
 	}
 
-	// calling the unqiuehashes here
-
-	uniquePacbio, _ := uniqueHash(pacbioIsolate)
-	uniqueillumina, _ := uniqueHash(illuminaIsolate)
 	uniqueGenome, _ := uniqueHash(genomeIsolate)
-
-	pacbioFile, err := os.Create("pacbiohashes.txt")
-	if err != nil {
-		log.Fatal(err)
-		defer pacbioFile.Close()
-	}
-	for i := range uniquePacbio {
-		pacbioFile.WriteString(uniquePacbio[i] + "\n")
-	}
-
-	illuminaFile, err := os.Create("pacbiohashes.txt")
-	if err != nil {
-		log.Fatal(err)
-		defer illuminaFile.Close()
-	}
-	for i := range uniqueillumina {
-		illuminaFile.WriteString(uniqueillumina[i] + "\n")
-	}
 
 	genomeFile, err := os.Create("pacbiohashes.txt")
 	if err != nil {
@@ -243,32 +231,8 @@ func sequenceFunc(cmd *cobra.Command, args []string) {
 		genomeFile.WriteString(uniqueGenome[i] + "\n")
 	}
 
-	pacbioIndexStart := []int{}
-	pacbioIndexEnd := []int{}
-
 	genomeIndexStart := []int{}
 	genomeIndexEnd := []int{}
-
-	illuminaIndexStart := []int{}
-	illuminaIndexEnd := []int{}
-
-	for i := range uniquePacbio {
-		for j := range pacbioIsolate {
-			start := strings.Index(pacbioIsolate[j], uniquePacbio[i])
-			end := start + len(uniquePacbio[i])
-			pacbioIndexStart = append(pacbioIndexStart, start)
-			pacbioIndexEnd = append(pacbioIndexEnd, end)
-		}
-	}
-
-	for i := range uniqueillumina {
-		for j := range illuminaIsolate {
-			start := strings.Index(illuminaIsolate[j], uniqueillumina[i])
-			end := start + len(uniqueillumina[i])
-			illuminaIndexStart = append(illuminaIndexStart, start)
-			illuminaIndexEnd = append(illuminaIndexEnd, end)
-		}
-	}
 
 	for i := range uniqueGenome {
 		for j := range genomeIsolate {
@@ -279,15 +243,86 @@ func sequenceFunc(cmd *cobra.Command, args []string) {
 		}
 	}
 
-	pacbioWrite, err := os.Create("pacbioKmerOrigin.txt")
+	genomeWrite, err := os.Create("genomeKmerOrigin.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	for i := range pacbioIndexStart {
-		pacbioWrite.WriteString(
-			string(pacbioIndexStart[i]) + "\t" + string(pacbioIndexEnd[i]) + "\t" + uniquePacbio[i],
-		)
+	for i := range genomeIndexStart {
+		start := strconv.Itoa(genomeIndexStart[i])
+		end := strconv.Itoa(genomeIndexEnd[i])
+		genomeWrite.WriteString(start + "\t" + end + "\t" + uniqueGenome[i])
+	}
+}
+
+func illuminaFunc(cmd *cobra.Command, args []string) {
+	type illuminaID struct {
+		id string
+	}
+
+	type illuminaSeq struct {
+		seq string
+	}
+
+	illuminaIDConstruct := []illuminaID{}
+	illuminaSeqConstruct := []illuminaSeq{}
+
+	fillumina, err := os.Open(illuminafile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	Oillumina := bufio.NewScanner(fillumina)
+	for Oillumina.Scan() {
+		line := Oillumina.Text()
+		if strings.HasPrefix(string(line), "@") {
+			illuminaIDConstruct = append(illuminaIDConstruct, illuminaID{
+				id: strings.ReplaceAll(strings.Split(string(line), " ")[0], "@", ""),
+			})
+		}
+		if strings.HasPrefix(string(line), "A") || strings.HasPrefix(string(line), "T") ||
+			strings.HasPrefix(string(line), "G") ||
+			strings.HasPrefix(string(line), "C)") {
+			illuminaSeqConstruct = append(illuminaSeqConstruct, illuminaSeq{
+				seq: string(line),
+			})
+		}
+	}
+
+	illuminaIsolate := []string{}
+
+	for i := range illuminaSeqConstruct {
+		illuminaIsolate = append(illuminaIsolate, illuminaSeqConstruct[i].seq)
+	}
+
+	illuminaHashes := []string{}
+
+	for i := 0; i <= len(illuminaIsolate); i++ {
+		for j := 0; j <= len(illuminaIsolate[i])-kmerArgs; j++ {
+			illuminaHashes = append(illuminaHashes, illuminaIsolate[i][j:j+kmerArgs])
+		}
+	}
+
+	uniqueillumina, _ := uniqueHash(illuminaIsolate)
+
+	illuminaFile, err := os.Create("pacbiohashes.txt")
+	if err != nil {
+		log.Fatal(err)
+		defer illuminaFile.Close()
+	}
+	for i := range uniqueillumina {
+		illuminaFile.WriteString(uniqueillumina[i] + "\n")
+	}
+
+	illuminaIndexStart := []int{}
+	illuminaIndexEnd := []int{}
+
+	for i := range uniqueillumina {
+		for j := range illuminaIsolate {
+			start := strings.Index(illuminaIsolate[j], uniqueillumina[i])
+			end := start + len(uniqueillumina[i])
+			illuminaIndexStart = append(illuminaIndexStart, start)
+			illuminaIndexEnd = append(illuminaIndexEnd, end)
+		}
 	}
 
 	illuminaWrite, err := os.Create("illuminaKmerOrigin.txt")
@@ -296,24 +331,9 @@ func sequenceFunc(cmd *cobra.Command, args []string) {
 	}
 
 	for i := range illuminaIndexStart {
-		illuminaWrite.WriteString(
-			string(
-				illuminaIndexStart[i],
-			) + "\t" + string(
-				illuminaIndexEnd[i],
-			) + "\t" + uniqueillumina[i],
-		)
-	}
-
-	genomeWrite, err := os.Create("genomeKmerOrigin.txt")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for i := range genomeIndexStart {
-		genomeWrite.WriteString(
-			string(genomeIndexStart[i]) + "\t" + string(genomeIndexEnd[i]) + "\t" + uniqueGenome[i],
-		)
+		start := strconv.Itoa(illuminaIndexStart[i])
+		end := strconv.Itoa(illuminaIndexEnd[i])
+		illuminaWrite.WriteString(start + "\t" + end + "\t" + uniqueillumina[i])
 	}
 }
 
